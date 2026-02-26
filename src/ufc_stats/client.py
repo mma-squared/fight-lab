@@ -8,10 +8,19 @@ from typing import Optional
 import pandas as pd
 import requests
 
-from .utils import _flatten_fight, format_accuracy_value, flatten_json_for_df
+from .utils import (
+    _flatten_fight,
+    format_accuracy_value,
+    flatten_json_for_df,
+    parse_ratio_value,
+)
 
 API_BASE = "https://ufcapi.aristotle.me"
 DEFAULT_CACHE_PATH = Path(__file__).resolve().parent.parent.parent / "notebooks" / "data"
+
+# Fight detail field glossary (fd_* columns)
+# rev = Reversals: position reversals in grappling (e.g., bottom to top)
+# ctrl = Control time: time in dominant position (e.g., "3:35")
 
 
 class UFCStatsClient:
@@ -150,7 +159,8 @@ class UFCStatsClient:
     def get_fighter_fights_df(self, fighter_id: str) -> pd.DataFrame:
         """
         Given a fighter ID, get all fights they've been in, return flat DataFrame.
-        Fetches full fighter details which includes fights.
+        Each row includes base fight data plus full fight details (totals, significant strikes
+        for both fighters). Fight details are cached separately at api_fights_{fight_id}.json.
         """
         data = self._get(f"/api/fighters/{fighter_id}")
         fights = data.get("fights", [])
@@ -161,8 +171,51 @@ class UFCStatsClient:
             flat = _flatten_fight(f)
             flat["fighter_id"] = data.get("id")
             flat["fighter_name"] = data.get("name")
+            # Fetch fight details (cached separately at api_fights_{fight_id}.json)
+            fight_id = f.get("fight_id")
+            if fight_id:
+                try:
+                    details = self.get_fight_details(fight_id)
+                    flat.update(self._flatten_fight_details_to_row(details))
+                except requests.HTTPError:
+                    pass  # No details available for this fight, keep base data only
             rows.append(flat)
         return pd.DataFrame(rows)
+
+    def _flatten_fight_details_to_row(self, data: dict) -> dict:
+        """
+        Flatten fight details (totals, significant_strikes) into a dict for merging into a row.
+        Ratio fields (X/Y) are expanded to _success, _attempt, _pct for graphing/AI.
+        rev = Reversals (position reversals in grappling); ctrl = Control time.
+        """
+        row = {}
+        row["fd_referee"] = data.get("referee")
+        row["fd_bout_type"] = data.get("bout_type")
+        row["fd_time_format"] = data.get("time_format")
+
+        def _process_value(base_key: str, val) -> None:
+            parsed = parse_ratio_value(val)
+            if parsed:
+                row[f"{base_key}_success"] = parsed["success"]
+                row[f"{base_key}_attempt"] = parsed["attempt"]
+                row[f"{base_key}"] = parsed["ratio"]
+                row[f"{base_key}_pct"] = parsed["pct"]
+            else:
+                ratio = format_accuracy_value(val) if isinstance(val, str) else val
+                row[base_key] = ratio
+
+        for key in ("fighter1", "fighter2"):
+            prefix = f"fd_{key}_"
+            t = data.get("totals", {}).get(key, {})
+            s = data.get("significant_strikes", {}).get(key, {})
+            row[f"{prefix}fighter_name"] = t.get("fighter") or s.get("fighter")
+            for k, v in t.items():
+                if k != "fighter":
+                    _process_value(f"{prefix}totals_{k}", v)
+            for k, v in s.items():
+                if k != "fighter":
+                    _process_value(f"{prefix}sig_str_{k}", v)
+        return row
 
     def get_fighter_id(self, name: str) -> Optional[str]:
         """Get fighter ID by name (first search match)."""
@@ -269,7 +322,7 @@ class UFCStatsClient:
         """
         Convenience: get basic info, fights, compare, and combined fights for two fighters.
         Returns dict with keys: fighter1_info, fighter2_info, fighter1_fights, fighter2_fights,
-        compare, all_fights, events_sample
+        compare, all_fights
         """
         id1 = self.get_fighter_id(fighter1_name)
         id2 = self.get_fighter_id(fighter2_name)
@@ -288,7 +341,6 @@ class UFCStatsClient:
                 ],
                 ignore_index=True,
             ),
-            "events_sample": self.get_events_df(limit=10),
         }
 
     def _format_fighter_metrics(self, d: dict) -> dict:
