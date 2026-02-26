@@ -12,6 +12,7 @@ from .utils import (
     _flatten_fight,
     format_accuracy_value,
     flatten_json_for_df,
+    normalize_fight_stats,
     parse_ratio_value,
 )
 
@@ -328,19 +329,15 @@ class UFCStatsClient:
         id2 = self.get_fighter_id(fighter2_name)
         if not id1 or not id2:
             raise ValueError(f"Could not find fighters: {fighter1_name!r}, {fighter2_name!r}")
+        f1_fights = normalize_fight_stats(self.get_fighter_fights_df(id1))
+        f2_fights = normalize_fight_stats(self.get_fighter_fights_df(id2))
         return {
             "fighter1_info": self.get_fighter_info_df(fighter1_name),
             "fighter2_info": self.get_fighter_info_df(fighter2_name),
-            "fighter1_fights": self.get_fighter_fights_df(id1),
-            "fighter2_fights": self.get_fighter_fights_df(id2),
+            "fighter1_fights": f1_fights,
+            "fighter2_fights": f2_fights,
             "compare": self.compare_fighters_df(id1, id2),
-            "all_fights": pd.concat(
-                [
-                    self.get_fighter_fights_df(id1),
-                    self.get_fighter_fights_df(id2),
-                ],
-                ignore_index=True,
-            ),
+            "all_fights": pd.concat([f1_fights, f2_fights], ignore_index=True),
         }
 
     def _format_fighter_metrics(self, d: dict) -> dict:
