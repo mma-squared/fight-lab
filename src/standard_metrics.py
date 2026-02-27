@@ -7,10 +7,14 @@ Extracts analysis logic from notebooks into reusable functions with proper types
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
+
+# Logo path for chart watermarks (transparent PNG recommended)
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "MMASquaredLogo.png"
 
 # Type alias for the data dict returned by UFCStatsClient.get_all_data_for_fighters
 FighterData = dict[str, pd.DataFrame]
@@ -20,6 +24,34 @@ FIGHTER1_COLOR = "#2563eb"
 FIGHTER2_COLOR = "#ea580c"
 # Margins for chart breathing room
 CHART_MARGIN = dict(t=120, b=90, l=80, r=60)
+
+
+def _add_logo_watermark(fig: go.Figure, opacity: float = 0.12) -> go.Figure:
+    """Add transparent MMA Squared logo as background watermark on a Plotly figure."""
+    if not _LOGO_PATH.exists():
+        return fig
+    try:
+        from PIL import Image
+        img = Image.open(_LOGO_PATH)
+        source = img
+    except Exception:
+        source = str(_LOGO_PATH)
+    fig.add_layout_image(
+        dict(
+            source=source,
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            sizex=0.5,
+            sizey=0.5,
+            xanchor="center",
+            yanchor="middle",
+            layer="below",
+            opacity=opacity,
+        )
+    )
+    return fig
 # Distinct colors for head/body/leg (avoid similar blues)
 TARGET_COLORS = {"Head": "#1e40af", "Body": "#dc2626", "Leg": "#16a34a"}
 
@@ -176,7 +208,7 @@ def record_comparison_figure(
         margin=CHART_MARGIN,
         yaxis_range=[y_min, y_max],
     )
-    return fig
+    return _add_logo_watermark(fig)
 
 
 def career_stats_comparison_figure(
@@ -224,7 +256,7 @@ def career_stats_comparison_figure(
         margin=CHART_MARGIN,
         yaxis_range=[y_min, y_max],
     )
-    return fig
+    return _add_logo_watermark(fig)
 
 
 def cumulative_wins_figure(
@@ -266,7 +298,7 @@ def cumulative_wins_figure(
         margin=CHART_MARGIN,
     )
     fig.add_hline(y=0, line_dash="dash", opacity=0.5)
-    return df1, df2, fig
+    return df1, df2, _add_logo_watermark(fig)
 
 
 def streak_and_last_5(
@@ -381,7 +413,7 @@ def strikes_absorbed_by_target_figures(
             yaxis_range=[y_min, y_max],
         )
         fig.add_hline(y=0, line_dash="dash", opacity=0.5)
-        figures.append(fig)
+        figures.append(_add_logo_watermark(fig))
 
     # Combined scatter: head vs body per fight
     fig2 = go.Figure()
@@ -402,7 +434,7 @@ def strikes_absorbed_by_target_figures(
         hovermode="closest",
         margin=CHART_MARGIN,
     )
-    figures.append(fig2)
+    figures.append(_add_logo_watermark(fig2))
     return figures
 
 
@@ -467,7 +499,7 @@ def strikes_by_position_figures(
             yaxis_range=[y_min, y_max],
         )
         fig.add_hline(y=0, line_dash="dash", opacity=0.5)
-        figures.append(fig)
+        figures.append(_add_logo_watermark(fig))
     return figures
 
 
@@ -525,7 +557,7 @@ def finishes_by_round_method_figures(
             xaxis={"categoryorder": "array", "categoryarray": x_cats},
             margin=CHART_MARGIN,
         )
-        figures.append(fig)
+        figures.append(_add_logo_watermark(fig))
     return figures
 
 
@@ -565,7 +597,7 @@ def takedowns_per_fight_figure(
         hovermode="closest",
         margin=CHART_MARGIN,
     )
-    return fig
+    return _add_logo_watermark(fig)
 
 
 def takedowns_absorbed_per_round_figures(
@@ -617,7 +649,7 @@ def takedowns_absorbed_per_round_figures(
             yaxis_range=[y_min, y_max],
         )
         fig.add_hline(y=0, line_dash="dash", opacity=0.5)
-        figures.append(fig)
+        figures.append(_add_logo_watermark(fig))
     return figures
 
 
@@ -782,7 +814,7 @@ def common_opponents_performance_figure(
         margin=CHART_MARGIN,
         yaxis_range=[y_min, y_max],
     )
-    return fig
+    return _add_logo_watermark(fig)
 
 
 def common_opponents_scatter_figure(
@@ -832,7 +864,7 @@ def common_opponents_scatter_figure(
         legend_title="Fighter – Result",
         margin=CHART_MARGIN,
     )
-    return fig
+    return _add_logo_watermark(fig)
 
 
 def _build_common_opponent_chart_data(
@@ -1043,7 +1075,7 @@ def _common_opponents_metric_figure(
 
     if y_ref_line is not None:
         fig.add_hline(y=y_ref_line, line_dash="dash", opacity=0.5)
-    return fig
+    return _add_logo_watermark(fig)
 
 
 def common_opponents_striking_figure(
@@ -1167,7 +1199,7 @@ def common_opponents_strike_share_by_target_figure(
             font=dict(size=11, color="gray"),
             xanchor="center",
         )
-    return fig
+    return _add_logo_watermark(fig)
 
 
 def common_opponents_strike_scatter_figure(
@@ -1209,4 +1241,4 @@ def common_opponents_strike_scatter_figure(
     )
     fig.add_hline(y=50, line_dash="dash", opacity=0.5)
     fig.add_vline(x=50, line_dash="dash", opacity=0.5)
-    return fig
+    return _add_logo_watermark(fig)

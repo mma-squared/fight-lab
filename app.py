@@ -53,6 +53,16 @@ def _make_ufc_client():
 
 st.set_page_config(page_title="UFC Stats – Fighter Analysis", layout="wide")
 
+# MMA Squared branding & CTA
+st.markdown("## MMA Squared")
+st.markdown(
+    "**The home of MMA fight breakdowns and data-driven analytics.** "
+    "[Subscribe on YouTube](https://www.youtube.com/@MMA-Squared) · "
+    "[Telegram](https://t.me/mmasquared) · "
+    "[mmasquared.com](https://mmasquared.com)"
+)
+st.divider()
+
 st.title("UFC Stats – Fighter Analysis")
 st.caption("Data from [UFC Stats API](https://ufcapi.aristotle.me)")
 
