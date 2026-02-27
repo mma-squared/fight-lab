@@ -40,7 +40,13 @@ Local: `.env` is loaded automatically. Secrets are never committed (`.env` is gi
    ```
 3. Ensure the cache bucket exists (default: `fighter-cache`)
 
+## Deploy to Railway (custom domain)
+
+For `stats.mmasquared.com`, deploy on [Railway](https://railway.app). See **[RAILWAY.md](RAILWAY.md)** for step-by-step instructions.
+
 ## Project Structure
 
-- `app.py` — Streamlit app for fighter comparisons (charts and visualizations)
+- `app.py` — Streamlit app for fighter comparisons
+- `assets/` — MMA Squared logo (chart watermarks)
+- `RAILWAY.md` — Railway deployment + custom domain guide
 - `src/ufc_stats/` — UFC Stats API wrapper library
