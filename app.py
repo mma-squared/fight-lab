@@ -71,88 +71,87 @@ if compare_clicked and fighter1.strip() and fighter2.strip():
     if force_refresh:
         st.success("Data refreshed from API and cache updated.")
 
-    # Overview
-    st.header("Overview")
+    tab_overview, tab_striking, tab_grappling, tab_common = st.tabs([
+        "Overview",
+        "Striking",
+        "Grappling",
+        "Common Opponents",
+    ])
 
-    st.subheader("Record / win-loss comparison")
-    fig = record_comparison_figure(data, fighter1, fighter2)
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Career stats comparison")
-    fig = career_stats_comparison_figure(data, fighter1, fighter2)
-    if fig is not None:
+    with tab_overview:
+        st.subheader("Record / win-loss comparison")
+        fig = record_comparison_figure(data, fighter1, fighter2)
         st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Win/loss trend over fights")
-    _, _, fig = cumulative_wins_figure(data, fighter1, fighter2)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Streak / momentum
-    st.subheader("Streak / momentum summary")
-    streak_data = streak_and_last_5(data, fighter1, fighter2)
-    for name in [fighter1, fighter2]:
-        info = streak_data[name]
-        st.markdown(f"**{name}**: Current streak = {info['streak']:+d}")
-        st.markdown("Last 5 fights (most recent first):")
-        st.dataframe(info["last_5"], use_container_width=True, hide_index=True)
-
-    # Common opponents
-    st.header("Common Opponents")
-    rec_table = common_opponents_record_table(data, fighter1, fighter2)
-    if rec_table.empty:
-        st.info("No common opponents.")
-    else:
-        st.dataframe(rec_table, use_container_width=True, hide_index=True)
-        fig = common_opponents_performance_figure(data, fighter1, fighter2)
+        st.subheader("Career stats comparison")
+        fig = career_stats_comparison_figure(data, fighter1, fighter2)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
-        fig2 = common_opponents_scatter_figure(data, fighter1, fighter2)
-        if fig2 is not None:
-            st.plotly_chart(fig2, use_container_width=True)
-        for fig_fn in [
-            common_opponents_striking_figure,
-            common_opponents_strike_accuracy_figure,
-            common_opponents_takedown_figure,
-            common_opponents_strike_share_by_target_figure,
-        ]:
-            fig = fig_fn(data, fighter1, fighter2)
+
+        st.subheader("Win/loss trend over fights")
+        _, _, fig = cumulative_wins_figure(data, fighter1, fighter2)
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Streak / momentum summary")
+        streak_data = streak_and_last_5(data, fighter1, fighter2)
+        for name in [fighter1, fighter2]:
+            info = streak_data[name]
+            st.markdown(f"**{name}**: Current streak = {info['streak']:+d}")
+            st.markdown("Last 5 fights (most recent first):")
+            st.dataframe(info["last_5"], use_container_width=True, hide_index=True)
+
+        st.subheader("Head-to-head advantages")
+        adv = head_to_head_advantages(data, fighter1, fighter2)
+        for name in [fighter1, fighter2]:
+            val = adv.get(name)
+            if val:
+                st.markdown(f"**{name}** leads in: {val}")
+
+        st.subheader("Finishes by round & method")
+        for fig in finishes_by_round_method_figures(data, fighter1, fighter2):
+            st.plotly_chart(fig, use_container_width=True)
+
+    with tab_striking:
+        st.subheader("Strikes absorbed by target (defense profile)")
+        for fig in strikes_absorbed_by_target_figures(data, fighter1, fighter2):
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Strikes by position: distance / clinch / ground")
+        for fig in strikes_by_position_figures(data, fighter1, fighter2):
+            st.plotly_chart(fig, use_container_width=True)
+
+    with tab_grappling:
+        st.subheader("Takedowns per fight")
+        fig = takedowns_per_fight_figure(data, fighter1, fighter2)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Takedowns absorbed per round")
+        for fig in takedowns_absorbed_per_round_figures(data, fighter1, fighter2):
             if fig is not None:
                 st.plotly_chart(fig, use_container_width=True)
 
-    # Head-to-head advantages
-    st.header("Head-to-head advantages")
-    adv = head_to_head_advantages(data, fighter1, fighter2)
-    for name in [fighter1, fighter2]:
-        val = adv.get(name)
-        if val:
-            st.markdown(f"**{name}** leads in: {val}")
-
-    # Secondary breakdowns
-    st.header("Secondary Breakdowns")
-
-    st.subheader("Strikes absorbed by target (defense profile)")
-    for fig in strikes_absorbed_by_target_figures(data, fighter1, fighter2):
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Strikes by position: distance / clinch / ground")
-    for fig in strikes_by_position_figures(data, fighter1, fighter2):
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Finishes
-    st.subheader("Finishes by round & method")
-    for fig in finishes_by_round_method_figures(data, fighter1, fighter2):
-        st.plotly_chart(fig, use_container_width=True)
-
-    # Takedowns
-    st.subheader("Takedowns per fight")
-    fig = takedowns_per_fight_figure(data, fighter1, fighter2)
-    if fig is not None:
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.subheader("Takedowns absorbed per round")
-    for fig in takedowns_absorbed_per_round_figures(data, fighter1, fighter2):
-        if fig is not None:
-            st.plotly_chart(fig, use_container_width=True)
+    with tab_common:
+        rec_table = common_opponents_record_table(data, fighter1, fighter2)
+        if rec_table.empty:
+            st.info("No common opponents.")
+        else:
+            st.dataframe(rec_table, use_container_width=True, hide_index=True)
+            fig = common_opponents_performance_figure(data, fighter1, fighter2)
+            if fig is not None:
+                st.plotly_chart(fig, use_container_width=True)
+            fig2 = common_opponents_scatter_figure(data, fighter1, fighter2)
+            if fig2 is not None:
+                st.plotly_chart(fig2, use_container_width=True)
+            for fig_fn in [
+                common_opponents_striking_figure,
+                common_opponents_strike_accuracy_figure,
+                common_opponents_takedown_figure,
+                common_opponents_strike_share_by_target_figure,
+            ]:
+                fig = fig_fn(data, fighter1, fighter2)
+                if fig is not None:
+                    st.plotly_chart(fig, use_container_width=True)
 
 else:
     st.info(
