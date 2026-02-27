@@ -2,6 +2,7 @@
 
 import json
 import re
+from contextlib import contextmanager, nullcontext as _nullcontext
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +43,20 @@ class UFCStatsClient:
         else:
             self._cache_path = DEFAULT_CACHE_PATH
             self._cache_path.mkdir(parents=True, exist_ok=True)
+        self._skip_cache = False
+
+    @contextmanager
+    def force_refresh(self):
+        """
+        Context manager to bypass cache and overwrite with fresh API data.
+        Use when data looks stale; fresh responses are written to cache.
+        """
+        prev = self._skip_cache
+        self._skip_cache = True
+        try:
+            yield
+        finally:
+            self._skip_cache = prev
 
     def _path_to_cache_key(self, path: str) -> str:
         """Convert API path to filesystem-safe cache filename."""
@@ -69,10 +84,11 @@ class UFCStatsClient:
             json.dump(data, f, indent=2)
 
     def _get(self, path: str) -> dict:
-        """GET request to API. Uses cache when cache_path is set."""
-        cached = self._get_cached(path)
-        if cached is not None:
-            return cached
+        """GET request to API. Uses cache when cache_path is set (unless force_refresh)."""
+        if not self._skip_cache:
+            cached = self._get_cached(path)
+            if cached is not None:
+                return cached
         url = f"{self.base_url}{path}"
         resp = self._session.get(url)
         resp.raise_for_status()
@@ -319,24 +335,34 @@ class UFCStatsClient:
         self,
         fighter1_name: str,
         fighter2_name: str,
+        *,
+        force_refresh: bool = False,
     ) -> dict[str, pd.DataFrame]:
         """
         Convenience: get basic info, fights, compare, and combined fights for two fighters.
         Returns dict with keys: fighter1_info, fighter2_info, fighter1_fights, fighter2_fights,
         compare, all_fights
+
+        If force_refresh=True, bypasses cache, fetches fresh data from API, and overwrites
+        the cache. Use when data looks stale.
         """
-        id1 = self.get_fighter_id(fighter1_name)
-        id2 = self.get_fighter_id(fighter2_name)
-        if not id1 or not id2:
-            raise ValueError(f"Could not find fighters: {fighter1_name!r}, {fighter2_name!r}")
-        f1_fights = normalize_fight_stats(self.get_fighter_fights_df(id1))
-        f2_fights = normalize_fight_stats(self.get_fighter_fights_df(id2))
+        fetcher = self.force_refresh() if force_refresh else _nullcontext()
+        with fetcher:
+            id1 = self.get_fighter_id(fighter1_name)
+            id2 = self.get_fighter_id(fighter2_name)
+            if not id1 or not id2:
+                raise ValueError(f"Could not find fighters: {fighter1_name!r}, {fighter2_name!r}")
+            f1_fights = normalize_fight_stats(self.get_fighter_fights_df(id1))
+            f2_fights = normalize_fight_stats(self.get_fighter_fights_df(id2))
+            fighter1_info = self.get_fighter_info_df(fighter1_name)
+            fighter2_info = self.get_fighter_info_df(fighter2_name)
+            compare = self.compare_fighters_df(id1, id2)
         return {
-            "fighter1_info": self.get_fighter_info_df(fighter1_name),
-            "fighter2_info": self.get_fighter_info_df(fighter2_name),
+            "fighter1_info": fighter1_info,
+            "fighter2_info": fighter2_info,
             "fighter1_fights": f1_fights,
             "fighter2_fights": f2_fights,
-            "compare": self.compare_fighters_df(id1, id2),
+            "compare": compare,
             "all_fights": pd.concat([f1_fights, f2_fights], ignore_index=True),
         }
 

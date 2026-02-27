@@ -15,6 +15,14 @@ import plotly.graph_objects as go
 # Type alias for the data dict returned by UFCStatsClient.get_all_data_for_fighters
 FighterData = dict[str, pd.DataFrame]
 
+# Distinct colors for two-fighter comparisons (avoid similar blues)
+FIGHTER1_COLOR = "#2563eb"
+FIGHTER2_COLOR = "#ea580c"
+# Margins for chart breathing room
+CHART_MARGIN = dict(t=120, b=90, l=80, r=60)
+# Distinct colors for head/body/leg (avoid similar blues)
+TARGET_COLORS = {"Head": "#1e40af", "Body": "#dc2626", "Leg": "#16a34a"}
+
 __all__ = [
     "FighterData",
     "sort_fights_chronologically",
@@ -109,6 +117,22 @@ def _jitter(seed: Any, scale: float = 0.08) -> float:
     return (h % 100) / 100 * 2 * scale - scale
 
 
+def _axis_range_with_padding(
+    max_positive: float,
+    max_negative: float,
+    *,
+    pct: float = 0.2,
+    min_pad: float = 3.0,
+) -> tuple[float, float]:
+    """
+    Return (y_min, y_max) with consistent padding for textposition="outside" labels.
+    Uses both percentage and minimum absolute padding so small-value charts get room.
+    """
+    pad_top = max(max_positive * pct, min_pad)
+    pad_bot = max(max_negative * pct, min_pad)
+    return (-max_negative - pad_bot, max_positive + pad_top)
+
+
 # -----------------------------------------------------------------------------
 # Figure / visualization functions
 # -----------------------------------------------------------------------------
@@ -143,6 +167,7 @@ def record_comparison_figure(
         title="Career record",
         yaxis_title="Count",
         legend_title="Result",
+        margin=CHART_MARGIN,
     )
     return fig
 
@@ -175,16 +200,19 @@ def career_stats_comparison_figure(
     fig.add_trace(go.Bar(
         name=fighter1, x=stats_df["Stat"], y=y1,
         text=y1.round(2), textposition="outside",
+        marker_color=FIGHTER1_COLOR,
     ))
     fig.add_trace(go.Bar(
         name=fighter2, x=stats_df["Stat"], y=y2,
         text=y2.round(2), textposition="outside",
+        marker_color=FIGHTER2_COLOR,
     ))
     fig.update_layout(
         barmode="group",
         title="Career stats comparison",
         xaxis_tickangle=-45,
         legend_title="Fighter",
+        margin=CHART_MARGIN,
     )
     return fig
 
@@ -211,18 +239,21 @@ def cumulative_wins_figure(
         mode="lines+markers", name=fighter1,
         text=df1["opponent"],
         hovertemplate="Fight %{x}: vs %{text}<br>Cumulative: %{y}<extra></extra>",
+        marker_color=FIGHTER1_COLOR,
     ))
     fig.add_trace(go.Scatter(
         x=df2["fight_num"], y=df2["cum_wins"],
         mode="lines+markers", name=fighter2,
         text=df2["opponent"],
         hovertemplate="Fight %{x}: vs %{text}<br>Cumulative: %{y}<extra></extra>",
+        marker_color=FIGHTER2_COLOR,
     ))
     fig.update_layout(
         title="Cumulative W-L trend (win=+1, loss=-1)",
         xaxis_title="Fight number",
         yaxis_title="Cumulative",
         hovermode="x unified",
+        margin=CHART_MARGIN,
     )
     fig.add_hline(y=0, line_dash="dash", opacity=0.5)
     return df1, df2, fig
@@ -318,38 +349,48 @@ def strikes_absorbed_by_target_figures(
             land_per_rd = [0, 0, 0]
             labels_neg = ["", "", ""]
         fig = go.Figure()
+        my_color = FIGHTER1_COLOR if name == fighter1 else FIGHTER2_COLOR
+        other_color = FIGHTER2_COLOR if name == fighter1 else FIGHTER1_COLOR
         fig.add_trace(go.Bar(
             x=["Head", "Body", "Leg"], y=abs_per_rd, name=f"{name} absorbed",
-            text=labels_pos, textposition="outside", marker_color="steelblue",
+            text=labels_pos, textposition="outside", marker_color=my_color,
         ))
         fig.add_trace(go.Bar(
             x=["Head", "Body", "Leg"], y=[-v for v in land_per_rd], name=f"{other_name} lands",
-            text=labels_neg, textposition="outside", marker_color="coral",
+            text=labels_neg, textposition="outside", marker_color=other_color,
         ))
+        max_pos = max(abs_per_rd) if abs_per_rd else 1
+        max_neg = max(land_per_rd) if land_per_rd else 1
+        y_min, y_max = _axis_range_with_padding(max_pos, max_neg)
         fig.update_layout(
             barmode="group",
             title=f"{name}: Strikes absorbed vs {other_name} lands (per round avg)",
             yaxis_title="Strikes per round (absorbed ↑ / landed ↓)",
             xaxis_title="Target",
+            margin=CHART_MARGIN,
+            yaxis_range=[y_min, y_max],
         )
         fig.add_hline(y=0, line_dash="dash", opacity=0.5)
         figures.append(fig)
 
     # Combined scatter: head vs body per fight
     fig2 = go.Figure()
-    for name, df in [(fighter1, f1_fights), (fighter2, f2_fights)]:
+    for i, (name, df) in enumerate([(fighter1, f1_fights), (fighter2, f2_fights)]):
         df = df.fillna(0)
         if has_cols(df):
+            color = FIGHTER1_COLOR if name == fighter1 else FIGHTER2_COLOR
             fig2.add_trace(go.Scatter(
                 x=df[head_col], y=df[body_col], mode="markers", name=name,
                 text=df["opponent"],
                 hovertemplate="vs %{text}<br>Head: %{x} | Body: %{y}<extra></extra>",
+                marker_color=color,
             ))
     fig2.update_layout(
         title="Strikes absorbed per fight (head vs body)",
         xaxis_title="Head",
         yaxis_title="Body",
         hovermode="closest",
+        margin=CHART_MARGIN,
     )
     figures.append(fig2)
     return figures
@@ -379,13 +420,15 @@ def strikes_by_position_figures(
         other_rounds = max(1, other_df["rounds"].sum())
         other_land_per_rd = (other_df[my_cols].fillna(0).sum() / other_rounds).values
         fig = go.Figure()
+        my_color = FIGHTER1_COLOR if name == fighter1 else FIGHTER2_COLOR
+        other_color = FIGHTER2_COLOR if name == fighter1 else FIGHTER1_COLOR
         fig.add_trace(go.Bar(
             name="Landed",
             x=["Distance", "Clinch", "Ground"],
             y=my_per_rd,
             text=[f"{v:.1f}/rd" for v in my_per_rd],
             textposition="outside",
-            marker_color="steelblue",
+            marker_color=my_color,
         ))
         fig.add_trace(go.Bar(
             name="Absorbed",
@@ -393,7 +436,7 @@ def strikes_by_position_figures(
             y=opp_per_rd,
             text=[f"{v:.1f}/rd" for v in opp_per_rd],
             textposition="outside",
-            marker_color="lightblue",
+            marker_color="#94a3b8",  # slate-400, lighter for absorbed
         ))
         fig.add_trace(go.Bar(
             name=f"{other_name} lands (inverse)",
@@ -401,12 +444,17 @@ def strikes_by_position_figures(
             y=[-v for v in other_land_per_rd],
             text=[f"{v:.1f}/rd" for v in other_land_per_rd],
             textposition="outside",
-            marker_color="coral",
+            marker_color=other_color,
         ))
+        max_pos = float(max(max(my_per_rd), max(opp_per_rd), 0.1))
+        max_neg = float(max(other_land_per_rd)) if len(other_land_per_rd) else 0.1
+        y_min, y_max = _axis_range_with_padding(max_pos, max_neg)
         fig.update_layout(
             barmode="group",
             title=f"{name}: Strikes by position (per round)",
             yaxis_title="Per round",
+            margin=CHART_MARGIN,
+            yaxis_range=[y_min, y_max],
         )
         fig.add_hline(y=0, line_dash="dash", opacity=0.5)
         figures.append(fig)
@@ -465,6 +513,7 @@ def finishes_by_round_method_figures(
             xaxis_title="Round",
             yaxis_title="Count",
             xaxis={"categoryorder": "array", "categoryarray": x_cats},
+            margin=CHART_MARGIN,
         )
         figures.append(fig)
     return figures
@@ -487,6 +536,7 @@ def takedowns_per_fight_figure(
         df = df.dropna(subset=[td_landed, td_absorbed], how="all").fillna(0)
         if df.empty:
             continue
+        color = FIGHTER1_COLOR if name == fighter1 else FIGHTER2_COLOR
         x = df[td_landed].astype(float)
         y = df[td_absorbed].astype(float)
         x_jitter = x + [_jitter((name, opp, i)) for i, opp in enumerate(df["opponent"])]
@@ -496,12 +546,14 @@ def takedowns_per_fight_figure(
             text=df["opponent"],
             customdata=df[[td_landed, td_absorbed]].values,
             hovertemplate="vs %{text}<br>Landed: %{customdata[0]:.0f} | Absorbed: %{customdata[1]:.0f}<extra></extra>",
+            marker_color=color,
         ))
     fig.update_layout(
         title="Takedowns: landed vs absorbed per fight",
         xaxis_title="Takedowns landed",
         yaxis_title="Takedowns absorbed",
         hovermode="closest",
+        margin=CHART_MARGIN,
     )
     return fig
 
@@ -532,21 +584,27 @@ def takedowns_absorbed_per_round_figures(
         other_rounds = max(1, other_clean["rounds"].sum() if "rounds" in other_clean.columns else len(other_clean))
         other_land_per_rd = other_clean[td_landed].sum() / other_rounds
         fig = go.Figure()
+        my_color = FIGHTER1_COLOR if name == fighter1 else FIGHTER2_COLOR
+        other_color = FIGHTER2_COLOR if name == fighter1 else FIGHTER1_COLOR
         fig.add_trace(go.Bar(
             x=["Absorbed"], y=[abs_per_rd], name=f"{name} absorbed",
-            text=f"{abs_per_rd:.2f}/rd", textposition="outside", marker_color="steelblue",
+            text=f"{abs_per_rd:.2f}/rd", textposition="outside", marker_color=my_color,
             hovertemplate="%{fullData.name}<br>Per round: %{y:.2f}<extra></extra>",
         ))
         fig.add_trace(go.Bar(
             x=["Absorbed"], y=[-other_land_per_rd], name=f"{other_name} lands",
-            text=f"{other_land_per_rd:.2f}/rd", textposition="outside", marker_color="coral",
+            text=f"{other_land_per_rd:.2f}/rd", textposition="outside", marker_color=other_color,
             customdata=[[other_land_per_rd]],
             hovertemplate="%{fullData.name}<br>Per round: %{customdata[0]:.2f}<extra></extra>",
         ))
+        max_val = max(abs_per_rd, other_land_per_rd, 0.5)
+        y_min, y_max = _axis_range_with_padding(max_val, max_val)
         fig.update_layout(
             title=f"{name} absorbed vs {other_name} lands (per round)",
             yaxis_title="Per round",
             barmode="group",
+            margin=CHART_MARGIN,
+            yaxis_range=[y_min, y_max],
         )
         fig.add_hline(y=0, line_dash="dash", opacity=0.5)
         figures.append(fig)
@@ -658,6 +716,10 @@ def common_opponents_performance_figure(
     loss1_neg = [-x for x in loss1]
     loss2_neg = [-x for x in loss2]
 
+    max_pos = max(wins1 + wins2, default=1)
+    max_neg = max(loss1 + loss2, default=1)
+    y_min, y_max = _axis_range_with_padding(max_pos, max_neg)
+
     fig = go.Figure()
     fig.add_trace(go.Bar(
         name=f"{fighter1} Wins",
@@ -665,7 +727,7 @@ def common_opponents_performance_figure(
         y=wins1,
         text=wins1,
         textposition="outside",
-        marker_color="steelblue",
+        marker_color=FIGHTER1_COLOR,
         customdata=list(zip([fighter1] * len(common), hover1_w)),
         hovertemplate="<b>%{customdata[0]}</b><br>Wins:<br>%{customdata[1]}<extra></extra>",
     ))
@@ -675,7 +737,7 @@ def common_opponents_performance_figure(
         y=loss1_neg,
         text=loss1,
         textposition="outside",
-        marker_color="lightcoral",
+        marker_color="#fca5a5",  # light red for losses
         customdata=list(zip([fighter1] * len(common), hover1_l)),
         hovertemplate="<b>%{customdata[0]}</b><br>Losses:<br>%{customdata[1]}<extra></extra>",
     ))
@@ -685,7 +747,7 @@ def common_opponents_performance_figure(
         y=wins2,
         text=wins2,
         textposition="outside",
-        marker_color="darkorange",
+        marker_color=FIGHTER2_COLOR,
         customdata=list(zip([fighter2] * len(common), hover2_w)),
         hovertemplate="<b>%{customdata[0]}</b><br>Wins:<br>%{customdata[1]}<extra></extra>",
     ))
@@ -695,7 +757,7 @@ def common_opponents_performance_figure(
         y=loss2_neg,
         text=loss2,
         textposition="outside",
-        marker_color="mistyrose",
+        marker_color="#fed7aa",  # light orange for losses
         customdata=list(zip([fighter2] * len(common), hover2_l)),
         hovertemplate="<b>%{customdata[0]}</b><br>Losses:<br>%{customdata[1]}<extra></extra>",
     ))
@@ -707,6 +769,8 @@ def common_opponents_performance_figure(
         yaxis_title="Wins / Losses",
         xaxis_tickangle=-45,
         legend_title="Result",
+        margin=CHART_MARGIN,
+        yaxis_range=[y_min, y_max],
     )
     return fig
 
@@ -725,8 +789,8 @@ def common_opponents_scatter_figure(
 
     fig = go.Figure()
     for name, df, win_color, loss_color in [
-        (fighter1, f1, "#2563eb", "#dc2626"),
-        (fighter2, f2, "#059669", "#9333ea"),
+        (fighter1, f1, FIGHTER1_COLOR, "#dc2626"),
+        (fighter2, f2, FIGHTER2_COLOR, "#9333ea"),
     ]:
         df = df.copy()
         df["_date"] = pd.to_datetime(df["event_date"], errors="coerce")
@@ -756,6 +820,7 @@ def common_opponents_scatter_figure(
         hovermode="closest",
         xaxis={"tickformat": "%b %Y"},
         legend_title="Fighter – Result",
+        margin=CHART_MARGIN,
     )
     return fig
 
@@ -799,7 +864,7 @@ def _build_common_opponent_chart_data(
         x_labels.append(short_label)
         y_values.append(float(val))
         hover_texts.append(f"{fighter} vs {opp}<br>{date_str} | {result}<br>{value_label}: {val:.0f}%")
-        colors.append("steelblue" if fighter == fighter1 else "darkorange")
+        colors.append(FIGHTER1_COLOR if fighter == fighter1 else FIGHTER2_COLOR)
 
     return x_labels, y_values, hover_texts, colors, group_starts, group_opponents
 
@@ -927,7 +992,7 @@ def _common_opponents_metric_figure(
             y=[None],
             mode="markers",
             name=fighter1,
-            marker=dict(color="steelblue", size=12, symbol="square"),
+            marker=dict(color=FIGHTER1_COLOR, size=12, symbol="square"),
             showlegend=True,
         )
     )
@@ -937,7 +1002,7 @@ def _common_opponents_metric_figure(
             y=[None],
             mode="markers",
             name=fighter2,
-            marker=dict(color="darkorange", size=12, symbol="square"),
+            marker=dict(color=FIGHTER2_COLOR, size=12, symbol="square"),
             showlegend=True,
         )
     )
@@ -946,8 +1011,9 @@ def _common_opponents_metric_figure(
         xaxis_title="Fight (grouped by opponent)",
         yaxis_title=f"{value_label} (%)",
         xaxis_tickangle=-45,
-        yaxis_range=[0, 105],
+        yaxis_range=[0, 110],
         legend_title="Fighter",
+        margin=CHART_MARGIN,
     )
     _add_opponent_group_separators(fig, group_starts, len(x_labels))
 
@@ -1065,6 +1131,7 @@ def common_opponents_strike_share_by_target_figure(
             y=comb[target].tolist(),
             text=[f"{v:.0f}%" for v in comb[target]],
             textposition="inside",
+            marker_color=TARGET_COLORS[label],
         ))
     fig.update_layout(
         barmode="stack",
@@ -1072,8 +1139,9 @@ def common_opponents_strike_share_by_target_figure(
         xaxis_title="Fight (grouped by opponent)",
         yaxis_title="Percentage of sig strikes",
         xaxis_tickangle=-45,
-        yaxis_range=[0, 105],
+        yaxis_range=[0, 110],
         legend_title="Target",
+        margin=CHART_MARGIN,
     )
     _add_opponent_group_separators(fig, group_starts, len(x_labels))
     for i, opp in enumerate(group_opponents):
@@ -1110,6 +1178,7 @@ def common_opponents_strike_scatter_figure(
         sub = comb[comb["fighter"] == name]
         if sub.empty:
             continue
+        color = FIGHTER1_COLOR if name == fighter1 else FIGHTER2_COLOR
         fig.add_trace(go.Scatter(
             x=sub["strike_acc_pct"],
             y=sub["strike_share_pct"],
@@ -1117,6 +1186,7 @@ def common_opponents_strike_scatter_figure(
             name=name,
             text=sub.apply(lambda r: f"{r['opponent']} {pd.Timestamp(r['_date']).strftime('%b %Y')}", axis=1),
             hovertemplate="%{text}<br>Accuracy: %{x:.0f}% | Share: %{y:.0f}%<extra></extra>",
+            marker_color=color,
         ))
     fig.update_layout(
         title="Strike accuracy % vs strike share % (common opponent fights)",
@@ -1125,6 +1195,7 @@ def common_opponents_strike_scatter_figure(
         hovermode="closest",
         xaxis_range=[0, 105],
         yaxis_range=[0, 105],
+        margin=CHART_MARGIN,
     )
     fig.add_hline(y=50, line_dash="dash", opacity=0.5)
     fig.add_vline(x=50, line_dash="dash", opacity=0.5)
