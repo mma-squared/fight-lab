@@ -121,16 +121,20 @@ def _axis_range_with_padding(
     max_positive: float,
     max_negative: float,
     *,
-    pct: float = 0.2,
-    min_pad: float = 3.0,
+    pct: float = 0.4,
 ) -> tuple[float, float]:
     """
-    Return (y_min, y_max) with consistent padding for textposition="outside" labels.
-    Uses both percentage and minimum absolute padding so small-value charts get room.
+    Return (y_min, y_max) with proportional padding for textposition="outside" labels.
+    Uses 40% padding so labels fit; percentage-only keeps scaling consistent.
     """
-    pad_top = max(max_positive * pct, min_pad)
-    pad_bot = max(max_negative * pct, min_pad)
+    pad_top = max_positive * pct
+    pad_bot = max_negative * pct
     return (-max_negative - pad_bot, max_positive + pad_top)
+
+
+def _axis_range_positive_only(max_val: float, *, pct: float = 0.25) -> tuple[float, float]:
+    """Return (0, y_max) for charts that start at zero. Adds padding at top for labels."""
+    return (0, max_val * (1 + pct))
 
 
 # -----------------------------------------------------------------------------
@@ -162,12 +166,15 @@ def record_comparison_figure(
             textposition="outside",
             textfont={"size": 14},
         ))
+    max_val = (rec_df["Wins"] + rec_df["Losses"] + rec_df["Draws"]).max()
+    y_min, y_max = _axis_range_positive_only(max_val)
     fig.update_layout(
         barmode="stack",
         title="Career record",
         yaxis_title="Count",
         legend_title="Result",
         margin=CHART_MARGIN,
+        yaxis_range=[y_min, y_max],
     )
     return fig
 
@@ -207,12 +214,15 @@ def career_stats_comparison_figure(
         text=y2.round(2), textposition="outside",
         marker_color=FIGHTER2_COLOR,
     ))
+    max_val = max(y1.max(), y2.max())
+    y_min, y_max = _axis_range_positive_only(max_val)
     fig.update_layout(
         barmode="group",
         title="Career stats comparison",
         xaxis_tickangle=-45,
         legend_title="Fighter",
         margin=CHART_MARGIN,
+        yaxis_range=[y_min, y_max],
     )
     return fig
 

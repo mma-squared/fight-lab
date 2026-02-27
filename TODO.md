@@ -1,4 +1,5 @@
 - remove notebook only use streamlit
 - Add tabs to the streamlit
+- Update README to remove notebook, and tell people to run streamlit locally.
 - Create TG 
 - Deploy to a website.
