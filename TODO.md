@@ -1,2 +1,1 @@
-- Create TG 
 - Deploy to a website.

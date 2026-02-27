@@ -1,14 +1,17 @@
 """UFC Stats API client."""
 
-import json
 import re
 from contextlib import contextmanager, nullcontext as _nullcontext
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from .cache import CacheBackend
 
 import pandas as pd
 import requests
 
+from .cache import FilesystemCache
 from .utils import (
     _flatten_fight,
     format_accuracy_value,
@@ -32,17 +35,18 @@ class UFCStatsClient:
         self,
         base_url: str = API_BASE,
         cache_path: Optional[Path | str] = None,
+        cache_backend: Optional["CacheBackend"] = None,
     ):
         self.base_url = base_url.rstrip("/")
         self._session = requests.Session()
-        if cache_path is False:
-            self._cache_path = None
+        if cache_backend is not None:
+            self._cache = cache_backend
+        elif cache_path is False:
+            self._cache = None
         elif cache_path is not None:
-            self._cache_path = Path(cache_path)
-            self._cache_path.mkdir(parents=True, exist_ok=True)
+            self._cache = FilesystemCache(Path(cache_path))
         else:
-            self._cache_path = DEFAULT_CACHE_PATH
-            self._cache_path.mkdir(parents=True, exist_ok=True)
+            self._cache = FilesystemCache(DEFAULT_CACHE_PATH)
         self._skip_cache = False
 
     @contextmanager
@@ -67,21 +71,17 @@ class UFCStatsClient:
 
     def _get_cached(self, path: str) -> dict | None:
         """Load response from cache if it exists."""
-        if self._cache_path is None:
+        if self._cache is None:
             return None
-        cache_file = self._cache_path / self._path_to_cache_key(path)
-        if cache_file.exists():
-            with open(cache_file, encoding="utf-8") as f:
-                return json.load(f)
-        return None
+        key = self._path_to_cache_key(path)
+        return self._cache.get(key)
 
     def _set_cached(self, path: str, data: dict) -> None:
         """Save response to cache."""
-        if self._cache_path is None:
+        if self._cache is None:
             return
-        cache_file = self._cache_path / self._path_to_cache_key(path)
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        key = self._path_to_cache_key(path)
+        self._cache.set(key, data)
 
     def _get(self, path: str) -> dict:
         """GET request to API. Uses cache when cache_path is set (unless force_refresh)."""

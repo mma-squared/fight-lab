@@ -4,13 +4,20 @@ import os
 import sys
 from pathlib import Path
 
+# Load .env for local dev (Streamlit Community Cloud uses Secrets -> env vars)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import streamlit as st
 
 # Add project root so we can import src
 root = Path(__file__).resolve().parent
 sys.path.insert(0, str(root))
 
-from src.ufc_stats import UFCStatsClient
+from src.ufc_stats import UFCStatsClient, SupabaseStorageCache
 from src.standard_metrics import (
     record_comparison_figure,
     career_stats_comparison_figure,
@@ -31,9 +38,18 @@ from src.standard_metrics import (
     common_opponents_strike_share_by_target_figure,
 )
 
-# Cache directory: use env var for deployment (e.g. Hugging Face Spaces persistent storage)
-CACHE_DIR = os.environ.get("UFC_CACHE_DIR", root / "notebooks" / "data")
-CACHE_PATH = Path(CACHE_DIR) if isinstance(CACHE_DIR, str) else CACHE_DIR
+# Cache: Supabase (Streamlit Community Cloud) or local filesystem
+def _make_ufc_client():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if url and key:
+        from supabase import create_client
+        supabase = create_client(url, key)
+        bucket = os.environ.get("SUPABASE_CACHE_BUCKET", "fighter-cache")
+        return UFCStatsClient(cache_backend=SupabaseStorageCache(supabase, bucket=bucket))
+    cache_dir = os.environ.get("UFC_CACHE_DIR", root / "notebooks" / "data")
+    cache_path = Path(cache_dir) if isinstance(cache_dir, str) else cache_dir
+    return UFCStatsClient(cache_path=cache_path)
 
 st.set_page_config(page_title="UFC Stats – Fighter Analysis", layout="wide")
 
@@ -57,7 +73,7 @@ with st.sidebar:
 # Main content
 if compare_clicked and fighter1.strip() and fighter2.strip():
     with st.spinner("Fetching fighter data…"):
-        client = UFCStatsClient(cache_path=CACHE_PATH)
+        client = _make_ufc_client()
         try:
             data = client.get_all_data_for_fighters(
                 fighter1.strip(),
