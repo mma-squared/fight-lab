@@ -1,3 +1,1 @@
-- For absorbed show a negative graph highlight the opponents landed. So you can see the inverse of what the opponent is up against.'
-- Fix streak
-- Move all this logic to functions so the noteboook is simply calling these functions.
+- Deploy to a website.
