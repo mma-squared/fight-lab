@@ -59,7 +59,7 @@ st.markdown(
     "**The home of MMA fight breakdowns and data-driven analytics.** "
     "[Subscribe on YouTube](https://www.youtube.com/@MMA-Squared) · "
     "[Telegram](https://t.me/mmasquared) · "
-    "[mmasquared.com](https://mmasquared.com)"
+    "[Contact](mailto:team@mmasquared.com)"
 )
 st.divider()
 
