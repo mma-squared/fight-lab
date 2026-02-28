@@ -63,8 +63,9 @@ def _make_ufc_client():
 st.set_page_config(page_title="UFC Stats – Fighter Analysis", layout="wide")
 
 # Initialize Google Analytics (must be early)
+# Note: package frontend expects "id", not "gtag_id" (docs are wrong)
 if GA4_MEASUREMENT_ID:
-    st_gtag(gtag_id=GA4_MEASUREMENT_ID, config={"send_page_view": True})
+    st_gtag(id=GA4_MEASUREMENT_ID, config={"send_page_view": True})
 
 # MMA Squared branding & CTA
 st.markdown("## MMA Squared")
@@ -118,8 +119,9 @@ if compare_clicked and fighter1.strip() and fighter2.strip():
             st.stop()
 
 # Send search event when user compares fighters
+# Note: package frontend expects "event_name" and "params"
 if GA4_MEASUREMENT_ID and fighter_search_event:
-    st_gtag(event="search", parameters=fighter_search_event)
+    st_gtag(id=GA4_MEASUREMENT_ID, event_name="search", params=fighter_search_event)
 
 # Main content
 if data is not None:
