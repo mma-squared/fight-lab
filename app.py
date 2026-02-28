@@ -13,7 +13,7 @@ except ImportError:
     pass
 
 import streamlit as st
-from streamlit.components.v1 import html as st_html
+import streamlit.components.v1 as components
 
 # Add project root so we can import src
 root = Path(__file__).resolve().parent
@@ -40,7 +40,7 @@ from src.standard_metrics import (
     common_opponents_strike_share_by_target_figure,
 )
 
-GA4_MEASUREMENT_ID = "G-5R0QD7V4X0"
+GA4_MEASUREMENT_ID = os.environ.get("GA4_MEASUREMENT_ID")
 
 
 def _normalize_fighter_pair(f1: str, f2: str) -> str:
@@ -48,26 +48,38 @@ def _normalize_fighter_pair(f1: str, f2: str) -> str:
     return " vs ".join(sorted([f1.strip(), f2.strip()], key=str.lower))
 
 
-def _ga4_tracking_script(fighter_search_event: dict | None = None) -> str:
-    """Build GA4 script: base config + optional fighter_search event."""
-    script = f"""
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id={GA4_MEASUREMENT_ID}"></script>
+def _ga4_base() -> str:
+    """GA4 base tag — injects into parent head so gtag is shared across components."""
+    return f"""
 <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){{ dataLayer.push(arguments); }}
-  gtag('js', new Date());
-  gtag('config', '{GA4_MEASUREMENT_ID}');
+(function() {{
+  var head = window.parent && window.parent.document && window.parent.document.head;
+  if (!head || head.querySelector('script[src*="googletagmanager.com/gtag/js"]')) return;
+  var doc = window.parent.document;
+  var s1 = doc.createElement('script');
+  s1.async = true;
+  s1.src = 'https://www.googletagmanager.com/gtag/js?id={GA4_MEASUREMENT_ID}';
+  head.appendChild(s1);
+  var s2 = doc.createElement('script');
+  s2.textContent = 'window.dataLayer=window.dataLayer||[];function gtag(){{dataLayer.push(arguments);}}gtag("js",new Date());gtag("config","{GA4_MEASUREMENT_ID}");';
+  head.appendChild(s2);
+}})();
+</script>
 """
-    if fighter_search_event:
-        # Single search event for the comparison (counts popular fighters + pairs)
-        # fighter_pair is normalized so order doesn't matter
-        params = ", ".join(
-            f"{k}: {json.dumps(v)}" for k, v in fighter_search_event.items()
-        )
-        script += f"\n  gtag('event', 'search', {{{params}}});\n"
-    script += "\n</script>"
-    return script
+
+
+def _ga4_event(event_name: str, params: dict) -> str:
+    """Fire GA4 event — calls parent.gtag (base must be in parent head)."""
+    params_json = json.dumps(params)
+    return f"""
+<script>
+(function() {{
+  if (window.parent && window.parent.gtag) {{
+    window.parent.gtag('event', {json.dumps(event_name)}, {params_json});
+  }}
+}})();
+</script>
+"""
 
 # Cache: Supabase (Streamlit Community Cloud) or local filesystem
 def _make_ufc_client():
@@ -111,7 +123,9 @@ with st.sidebar:
 
     compare_clicked = st.button("Compare", type="primary", use_container_width=True)
 
-# Main content
+# Fetch data when user submits, and determine if we should track the search event
+data = None
+fighter_search_event = None
 if compare_clicked and fighter1.strip() and fighter2.strip():
     with st.spinner("Fetching fighter data…"):
         client = _make_ufc_client()
@@ -121,22 +135,30 @@ if compare_clicked and fighter1.strip() and fighter2.strip():
                 fighter2.strip(),
                 force_refresh=force_refresh,
             )
+            # Track this comparison (only fires when user hit submit and we got data)
+            f1, f2 = fighter1.strip(), fighter2.strip()
+            fighter_search_event = {
+                "search_term": f"{f1} vs {f2}",
+                "fighter_pair": _normalize_fighter_pair(f1, f2),
+                "fighter_1": f1,
+                "fighter_2": f2,
+            }
         except ValueError as e:
             st.error(str(e))
             st.stop()
 
+# GA4: base tag once per session; fire search event only on successful submit
+if GA4_MEASUREMENT_ID:
+    if not st.session_state.get("ga_inited"):
+        components.html(_ga4_base(), height=0)
+        st.session_state["ga_inited"] = True
+    if fighter_search_event:
+        components.html(_ga4_event("search", fighter_search_event), height=0)
+
+# Main content
+if data is not None:
     if force_refresh:
         st.success("Data refreshed from API and cache updated.")
-
-    # GA4: base script + fighter search event (single search + normalized pair for analytics)
-    f1, f2 = fighter1.strip(), fighter2.strip()
-    fighter_search_event = {
-        "search_term": f"{f1} vs {f2}",
-        "fighter_1": f1,
-        "fighter_2": f2,
-        "fighter_pair": _normalize_fighter_pair(f1, f2),
-    }
-    st_html(_ga4_tracking_script(fighter_search_event), height=0)
 
     tab_overview, tab_striking, tab_grappling, tab_common = st.tabs([
         "Overview",
@@ -221,8 +243,6 @@ if compare_clicked and fighter1.strip() and fighter2.strip():
                     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    # GA4 base script when no comparison (or before first comparison)
-    st_html(_ga4_tracking_script(), height=0)
     st.info(
         "Enter two fighter names and click **Compare** to analyze. "
         "Check **Force refresh** if data looks stale — this fetches fresh data and overwrites the cache."
