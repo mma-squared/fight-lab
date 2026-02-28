@@ -1,5 +1,6 @@
 """UFC Stats Fighter Comparison - Streamlit App."""
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -12,6 +13,7 @@ except ImportError:
     pass
 
 import streamlit as st
+from streamlit.components.v1 import html as st_html
 
 # Add project root so we can import src
 root = Path(__file__).resolve().parent
@@ -37,6 +39,35 @@ from src.standard_metrics import (
     common_opponents_takedown_figure,
     common_opponents_strike_share_by_target_figure,
 )
+
+GA4_MEASUREMENT_ID = "G-5R0QD7V4X0"
+
+
+def _normalize_fighter_pair(f1: str, f2: str) -> str:
+    """Normalize pair so A vs B == B vs A (alphabetically sorted)."""
+    return " vs ".join(sorted([f1.strip(), f2.strip()], key=str.lower))
+
+
+def _ga4_tracking_script(fighter_search_event: dict | None = None) -> str:
+    """Build GA4 script: base config + optional fighter_search event."""
+    script = f"""
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id={GA4_MEASUREMENT_ID}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){{ dataLayer.push(arguments); }}
+  gtag('js', new Date());
+  gtag('config', '{GA4_MEASUREMENT_ID}');
+"""
+    if fighter_search_event:
+        # Single search event for the comparison (counts popular fighters + pairs)
+        # fighter_pair is normalized so order doesn't matter
+        params = ", ".join(
+            f"{k}: {json.dumps(v)}" for k, v in fighter_search_event.items()
+        )
+        script += f"\n  gtag('event', 'search', {{{params}}});\n"
+    script += "\n</script>"
+    return script
 
 # Cache: Supabase (Streamlit Community Cloud) or local filesystem
 def _make_ufc_client():
@@ -96,6 +127,16 @@ if compare_clicked and fighter1.strip() and fighter2.strip():
 
     if force_refresh:
         st.success("Data refreshed from API and cache updated.")
+
+    # GA4: base script + fighter search event (single search + normalized pair for analytics)
+    f1, f2 = fighter1.strip(), fighter2.strip()
+    fighter_search_event = {
+        "search_term": f"{f1} vs {f2}",
+        "fighter_1": f1,
+        "fighter_2": f2,
+        "fighter_pair": _normalize_fighter_pair(f1, f2),
+    }
+    st_html(_ga4_tracking_script(fighter_search_event), height=0)
 
     tab_overview, tab_striking, tab_grappling, tab_common = st.tabs([
         "Overview",
@@ -180,6 +221,8 @@ if compare_clicked and fighter1.strip() and fighter2.strip():
                     st.plotly_chart(fig, use_container_width=True)
 
 else:
+    # GA4 base script when no comparison (or before first comparison)
+    st_html(_ga4_tracking_script(), height=0)
     st.info(
         "Enter two fighter names and click **Compare** to analyze. "
         "Check **Force refresh** if data looks stale — this fetches fresh data and overwrites the cache."
