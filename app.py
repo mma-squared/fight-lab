@@ -1,6 +1,5 @@
 """UFC Stats Fighter Comparison - Streamlit App."""
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -13,7 +12,7 @@ except ImportError:
     pass
 
 import streamlit as st
-import streamlit.components.v1 as components
+from streamlit_gtag import st_gtag
 
 # Add project root so we can import src
 root = Path(__file__).resolve().parent
@@ -40,46 +39,13 @@ from src.standard_metrics import (
     common_opponents_strike_share_by_target_figure,
 )
 
-GA4_MEASUREMENT_ID = os.environ.get("GA4_MEASUREMENT_ID")
+GA4_MEASUREMENT_ID = os.environ.get("GA4_MEASUREMENT_ID", "G-5R0QD7V4X0")
 
 
 def _normalize_fighter_pair(f1: str, f2: str) -> str:
     """Normalize pair so A vs B == B vs A (alphabetically sorted)."""
     return " vs ".join(sorted([f1.strip(), f2.strip()], key=str.lower))
 
-
-def _ga4_base() -> str:
-    """GA4 base tag — injects into parent head so gtag is shared across components."""
-    return f"""
-<script>
-(function() {{
-  var head = window.parent && window.parent.document && window.parent.document.head;
-  if (!head || head.querySelector('script[src*="googletagmanager.com/gtag/js"]')) return;
-  var doc = window.parent.document;
-  var s1 = doc.createElement('script');
-  s1.async = true;
-  s1.src = 'https://www.googletagmanager.com/gtag/js?id={GA4_MEASUREMENT_ID}';
-  head.appendChild(s1);
-  var s2 = doc.createElement('script');
-  s2.textContent = 'window.dataLayer=window.dataLayer||[];function gtag(){{dataLayer.push(arguments);}}gtag("js",new Date());gtag("config","{GA4_MEASUREMENT_ID}");';
-  head.appendChild(s2);
-}})();
-</script>
-"""
-
-
-def _ga4_event(event_name: str, params: dict) -> str:
-    """Fire GA4 event — calls parent.gtag (base must be in parent head)."""
-    params_json = json.dumps(params)
-    return f"""
-<script>
-(function() {{
-  if (window.parent && window.parent.gtag) {{
-    window.parent.gtag('event', {json.dumps(event_name)}, {params_json});
-  }}
-}})();
-</script>
-"""
 
 # Cache: Supabase (Streamlit Community Cloud) or local filesystem
 def _make_ufc_client():
@@ -95,6 +61,10 @@ def _make_ufc_client():
     return UFCStatsClient(cache_path=cache_path)
 
 st.set_page_config(page_title="UFC Stats – Fighter Analysis", layout="wide")
+
+# Initialize Google Analytics (must be early)
+if GA4_MEASUREMENT_ID:
+    st_gtag(gtag_id=GA4_MEASUREMENT_ID, config={"send_page_view": True})
 
 # MMA Squared branding & CTA
 st.markdown("## MMA Squared")
@@ -147,13 +117,9 @@ if compare_clicked and fighter1.strip() and fighter2.strip():
             st.error(str(e))
             st.stop()
 
-# GA4: base tag once per session; fire search event only on successful submit
-if GA4_MEASUREMENT_ID:
-    if not st.session_state.get("ga_inited"):
-        components.html(_ga4_base(), height=0)
-        st.session_state["ga_inited"] = True
-    if fighter_search_event:
-        components.html(_ga4_event("search", fighter_search_event), height=0)
+# Send search event when user compares fighters
+if GA4_MEASUREMENT_ID and fighter_search_event:
+    st_gtag(event="search", parameters=fighter_search_event)
 
 # Main content
 if data is not None:
